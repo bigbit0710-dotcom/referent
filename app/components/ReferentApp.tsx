@@ -37,6 +37,25 @@ function isValidUrl(value: string) {
   }
 }
 
+async function readApiResponse(response: Response) {
+  const raw = await response.text();
+
+  try {
+    return JSON.parse(raw) as {
+      parsed?: { date: string | null; title: string; content: string };
+      error?: string;
+    };
+  } catch {
+    if (raw.trimStart().startsWith("<!DOCTYPE") || raw.trimStart().startsWith("<html")) {
+      throw new Error(
+        `Сервер вернул HTML вместо JSON (${response.status}). Перезапустите деплой на Vercel или проверьте /api/analyze.`,
+      );
+    }
+
+    throw new Error("Сервер вернул некорректный ответ");
+  }
+}
+
 export default function ReferentApp() {
   const [url, setUrl] = useState("");
   const [result, setResult] = useState("");
@@ -70,10 +89,7 @@ export default function ReferentApp() {
         body: JSON.stringify({ url: url.trim(), action }),
       });
 
-      const data = (await response.json()) as {
-        parsed?: { date: string | null; title: string; content: string };
-        error?: string;
-      };
+      const data = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error ?? "Не удалось обработать статью");

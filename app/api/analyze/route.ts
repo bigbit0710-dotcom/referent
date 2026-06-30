@@ -1,6 +1,9 @@
 import { parseArticle } from "@/lib/parse-article";
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 type Action = "summary" | "theses" | "telegram";
 
 export async function POST(request: NextRequest) {

@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  serverExternalPackages: ["linkedom", "@mozilla/readability", "cheerio"],
+};
 
 export default nextConfig;

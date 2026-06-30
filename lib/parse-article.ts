@@ -1,12 +1,14 @@
 import { Readability } from "@mozilla/readability";
 import * as cheerio from "cheerio";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 
 export type ParsedArticle = {
   date: string | null;
   title: string;
   content: string;
 };
+
+const BLOCKED_HOSTS = ["amazon.com", "amazon.co.uk", "amazon.de"];
 
 const CONTENT_SELECTORS = [
   "article",
@@ -33,6 +35,16 @@ const DATE_META_SELECTORS = [
 
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function assertAllowedUrl(url: string) {
+  const hostname = new URL(url).hostname.replace(/^www\./, "");
+
+  if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`))) {
+    throw new Error(
+      "Amazon и подобные магазины блокируют автоматическую загрузку. Используйте ссылку на статью или блог.",
+    );
+  }
 }
 
 function extractDate($: cheerio.CheerioAPI): string | null {
@@ -99,23 +111,31 @@ function extractContentWithCheerio($: cheerio.CheerioAPI): string {
 }
 
 export async function parseArticle(url: string): Promise<ParsedArticle> {
+  assertAllowedUrl(url);
+
   const response = await fetch(url, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "en-US,en;q=0.9",
     },
     signal: AbortSignal.timeout(15000),
+    redirect: "follow",
   });
 
   if (!response.ok) {
     throw new Error(`Не удалось загрузить страницу (${response.status})`);
   }
 
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
+    throw new Error("По ссылке нет HTML-страницы. Укажите URL статьи или блога.");
+  }
+
   const html = await response.text();
-  const dom = new JSDOM(html, { url });
-  const { document } = dom.window;
   const $ = cheerio.load(html);
+  const { document } = parseHTML(html);
 
   const date = extractDate($);
   const readability = new Readability(document);
