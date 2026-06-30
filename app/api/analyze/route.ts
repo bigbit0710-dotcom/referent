@@ -1,15 +1,7 @@
+import { parseArticle } from "@/lib/parse-article";
 import { NextRequest, NextResponse } from "next/server";
 
 type Action = "summary" | "theses" | "telegram";
-
-const PLACEHOLDERS: Record<Action, string> = {
-  summary:
-    "Здесь будет краткое описание статьи.\n\nПодключение AI и парсинг статьи — в следующем этапе разработки.",
-  theses:
-    "• Тезис 1 — будет извлечён из статьи\n• Тезис 2 — будет извлечён из статьи\n• Тезис 3 — будет извлечён из статьи\n\nПодключение AI — в следующем этапе разработки.",
-  telegram:
-    "📰 Заголовок поста\n\nКраткий анонс статьи на русском языке для Telegram.\n\n🔗 Ссылка на источник\n\n#referent #ai\n\nПодключение AI — в следующем этапе разработки.",
-};
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,15 +19,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Неизвестный тип действия" }, { status: 400 });
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    const parsed = await parseArticle(url);
 
-    return NextResponse.json({
-      result: `Источник: ${url}\n\n${PLACEHOLDERS[action]}`,
-    });
-  } catch {
-    return NextResponse.json(
-      { error: "Не удалось обработать запрос" },
-      { status: 500 },
-    );
+    return NextResponse.json({ parsed });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Не удалось обработать запрос";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

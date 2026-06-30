@@ -70,13 +70,16 @@ export default function ReferentApp() {
         body: JSON.stringify({ url: url.trim(), action }),
       });
 
-      const data = (await response.json()) as { result?: string; error?: string };
+      const data = (await response.json()) as {
+        parsed?: { date: string | null; title: string; content: string };
+        error?: string;
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Не удалось обработать статью");
       }
 
-      setResult(data.result ?? "");
+      setResult(JSON.stringify(data.parsed, null, 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Произошла ошибка");
       setResult("");
@@ -161,16 +164,16 @@ export default function ReferentApp() {
           {loading ? (
             <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 text-slate-400">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
-              <p>Загружаем статью и генерируем ответ…</p>
+              <p>Загружаем и парсим статью…</p>
             </div>
           ) : result ? (
-            <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 sm:text-base">
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-sm leading-7 text-slate-200 sm:text-base">
               {result}
-            </div>
+            </pre>
           ) : (
             <p className="text-sm leading-7 text-slate-500">
-              Вставьте ссылку на статью и выберите действие — здесь появится
-              сгенерированный ответ.
+              Вставьте ссылку на статью и выберите действие — здесь появится JSON
+              с датой, заголовком и содержимым.
             </p>
           )}
         </div>
