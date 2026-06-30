@@ -158,17 +158,25 @@ async function extractWithReadability(html: string): Promise<{ title: string; co
 export async function parseArticle(url: string): Promise<ParsedArticle> {
   assertAllowedUrl(url);
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    redirect: "follow",
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      redirect: "follow",
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error(
+      "Не удалось открыть ссылку. Проверьте URL — он должен начинаться с https:// и не содержать опечаток.",
+    );
+  }
 
   if (!response.ok) {
     throw new Error(

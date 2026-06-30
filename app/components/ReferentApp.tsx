@@ -2,9 +2,14 @@
 
 import { FormEvent, useState } from "react";
 
-type Action = "summary" | "theses" | "telegram";
+type Action = "summary" | "theses" | "telegram" | "translate";
 
 const ACTIONS: { id: Action; label: string; description: string }[] = [
+  {
+    id: "translate",
+    label: "Перевод",
+    description: "Полный перевод статьи на русский",
+  },
   {
     id: "summary",
     label: "О чем статья?",
@@ -23,15 +28,36 @@ const ACTIONS: { id: Action; label: string; description: string }[] = [
 ];
 
 const ACTION_TITLES: Record<Action, string> = {
+  translate: "Перевод",
   summary: "О чем статья",
   theses: "Тезисы",
   telegram: "Пост для Telegram",
 };
 
 function isValidUrl(value: string) {
+  const trimmed = value.trim();
+
   try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    const url = new URL(trimmed);
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return false;
+    }
+
+    if (/https?:\/\/.*https?:\/\//i.test(trimmed)) {
+      return false;
+    }
+
+    const host = url.hostname;
+    if (!host || host.includes(" ") || host === "whttps") {
+      return false;
+    }
+
+    if (host !== "localhost" && !host.includes(".")) {
+      return false;
+    }
+
+    return true;
   } catch {
     return false;
   }
@@ -43,6 +69,7 @@ async function readApiResponse(response: Response) {
   try {
     return JSON.parse(raw) as {
       parsed?: { date: string | null; title: string; content: string };
+      translation?: string;
       error?: string;
     };
   } catch {
@@ -59,6 +86,7 @@ async function readApiResponse(response: Response) {
 export default function ReferentApp() {
   const [url, setUrl] = useState("");
   const [result, setResult] = useState("");
+  const [resultMode, setResultMode] = useState<"text" | "json">("json");
   const [activeAction, setActiveAction] = useState<Action | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -73,7 +101,7 @@ export default function ReferentApp() {
     }
 
     if (!isValidUrl(url.trim())) {
-      setError("Укажите корректный URL (http:// или https://)");
+      setError("Укажите корректный URL (например: https://example.com/article). Проверьте, что нет опечаток вроде whttps://");
       setResult("");
       return;
     }
@@ -95,7 +123,13 @@ export default function ReferentApp() {
         throw new Error(data.error ?? "Не удалось обработать статью");
       }
 
-      setResult(JSON.stringify(data.parsed, null, 2));
+      if (action === "translate") {
+        setResultMode("text");
+        setResult(data.translation ?? "");
+      } else {
+        setResultMode("json");
+        setResult(JSON.stringify(data.parsed, null, 2));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Произошла ошибка");
       setResult("");
@@ -106,8 +140,13 @@ export default function ReferentApp() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void handleAction("summary");
+    void handleAction("translate");
   }
+
+  const loadingText =
+    activeAction === "translate"
+      ? "Парсим статью и переводим…"
+      : "Загружаем и парсим статью…";
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-10 sm:px-6 lg:px-8">
@@ -142,7 +181,7 @@ export default function ReferentApp() {
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {ACTIONS.map((action) => (
             <button
               key={action.id}
@@ -180,16 +219,23 @@ export default function ReferentApp() {
           {loading ? (
             <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 text-slate-400">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
-              <p>Загружаем и парсим статью…</p>
+              <p>{loadingText}</p>
             </div>
           ) : result ? (
-            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-sm leading-7 text-slate-200 sm:text-base">
-              {result}
-            </pre>
+            resultMode === "json" ? (
+              <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-sm leading-7 text-slate-200 sm:text-base">
+                {result}
+              </pre>
+            ) : (
+              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 sm:text-base">
+                {result}
+              </div>
+            )
           ) : (
             <p className="text-sm leading-7 text-slate-500">
-              Вставьте ссылку на статью и выберите действие — здесь появится JSON
-              с датой, заголовком и содержимым.
+              Вставьте ссылку на статью и выберите действие. Кнопка «Перевод»
+              покажет текст на русском, остальные — JSON с датой, заголовком и
+              содержимым.
             </p>
           )}
         </div>
