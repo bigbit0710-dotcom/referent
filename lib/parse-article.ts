@@ -1,12 +1,14 @@
-import { Readability } from "@mozilla/readability";
 import * as cheerio from "cheerio";
-import { parseHTML } from "linkedom";
 
 export type ParsedArticle = {
   date: string | null;
   title: string;
   content: string;
 };
+
+const MAX_HTML_BYTES = 600_000;
+const MAX_CONTENT_CHARS = 12_000;
+const FETCH_TIMEOUT_MS = 10_000;
 
 const BLOCKED_HOSTS = ["amazon.com", "amazon.co.uk", "amazon.de"];
 
@@ -37,12 +39,36 @@ function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function truncateContent(text: string): string {
+  if (text.length <= MAX_CONTENT_CHARS) {
+    return text;
+  }
+
+  return `${text.slice(0, MAX_CONTENT_CHARS)}… [обрезано, всего ${text.length} символов]`;
+}
+
 function assertAllowedUrl(url: string) {
   const hostname = new URL(url).hostname.replace(/^www\./, "");
 
   if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`))) {
     throw new Error(
       "Amazon и подобные магазины блокируют автоматическую загрузку. Используйте ссылку на статью или блог.",
+    );
+  }
+}
+
+function assertNotBlockedPage(html: string) {
+  const blockedMarkers = [
+    "Attention Required",
+    "cf-browser-verification",
+    "Enable JavaScript and cookies",
+    "Access denied",
+    "Request blocked",
+  ];
+
+  if (blockedMarkers.some((marker) => html.includes(marker))) {
+    throw new Error(
+      "Сайт заблокировал загрузку с сервера Vercel. Попробуйте другую ссылку или запустите приложение локально (pnpm dev).",
     );
   }
 }
@@ -110,6 +136,25 @@ function extractContentWithCheerio($: cheerio.CheerioAPI): string {
   return "";
 }
 
+async function extractWithReadability(html: string): Promise<{ title: string; content: string }> {
+  try {
+    const [{ parseHTML }, { Readability }] = await Promise.all([
+      import("linkedom"),
+      import("@mozilla/readability"),
+    ]);
+
+    const { document } = parseHTML(html);
+    const readable = new Readability(document).parse();
+
+    return {
+      title: readable?.title ? normalizeText(readable.title) : "",
+      content: readable?.textContent ? normalizeText(readable.textContent) : "",
+    };
+  } catch {
+    return { title: "", content: "" };
+  }
+}
+
 export async function parseArticle(url: string): Promise<ParsedArticle> {
   assertAllowedUrl(url);
 
@@ -120,12 +165,15 @@ export async function parseArticle(url: string): Promise<ParsedArticle> {
       Accept: "text/html,application/xhtml+xml",
       "Accept-Language": "en-US,en;q=0.9",
     },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     redirect: "follow",
+    cache: "no-store",
   });
 
   if (!response.ok) {
-    throw new Error(`Не удалось загрузить страницу (${response.status})`);
+    throw new Error(
+      `Не удалось загрузить страницу (${response.status}). Сайт может блокировать серверы Vercel.`,
+    );
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -133,25 +181,19 @@ export async function parseArticle(url: string): Promise<ParsedArticle> {
     throw new Error("По ссылке нет HTML-страницы. Укажите URL статьи или блога.");
   }
 
-  const html = await response.text();
-  const $ = cheerio.load(html);
-  const { document } = parseHTML(html);
+  let html = await response.text();
+  assertNotBlockedPage(html);
 
-  const date = extractDate($);
-  const readability = new Readability(document);
-  const readable = readability.parse();
-
-  const title = readable?.title
-    ? normalizeText(readable.title)
-    : extractTitle($);
-
-  let content = readable?.textContent
-    ? normalizeText(readable.textContent)
-    : "";
-
-  if (!content || content.length < 100) {
-    content = extractContentWithCheerio($);
+  if (html.length > MAX_HTML_BYTES) {
+    html = html.slice(0, MAX_HTML_BYTES);
   }
+
+  const $ = cheerio.load(html);
+  const date = extractDate($);
+  const readable = await extractWithReadability(html);
+
+  const title = readable.title || extractTitle($);
+  let content = readable.content || extractContentWithCheerio($);
 
   if (!title && !content) {
     throw new Error("Не удалось извлечь заголовок и содержимое статьи");
@@ -160,6 +202,6 @@ export async function parseArticle(url: string): Promise<ParsedArticle> {
   return {
     date,
     title: title || "Без заголовка",
-    content: content || "Содержимое не найдено",
+    content: truncateContent(content || "Содержимое не найдено"),
   };
 }

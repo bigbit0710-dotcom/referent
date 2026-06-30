@@ -2,7 +2,8 @@ import { parseArticle } from "@/lib/parse-article";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const dynamic = "force-dynamic";
+export const maxDuration = 10;
 
 type Action = "summary" | "theses" | "telegram";
 
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Не удалось обработать запрос";
+
+    console.error("[api/analyze]", message);
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
